@@ -1,9 +1,10 @@
+import asyncio
 import time
 
 import adafruit_rfm9x
 import board
 import busio
-from digitalio import DigitalInOut, Direction
+from digitalio import DigitalInOut, Direction, Pull
 from microcontroller import watchdog as w
 from watchdog import WatchDogMode
 
@@ -24,94 +25,137 @@ def red(data):
 
 
 # our version
-VERSION = "RF.Guru_8P_Switch_LoRa 0.1"
-
-pp1 = DigitalInOut(board.GP23)
-pp1.direction = Direction.OUTPUT
-pp1.value = config.port1
-time.sleep(config.delay)
-
-pp2 = DigitalInOut(board.GP22)
-pp2.direction = Direction.OUTPUT
-pp2.value = config.port2
-time.sleep(config.delay)
-
-pp3 = DigitalInOut(board.GP14)
-pp3.direction = Direction.OUTPUT
-pp3.value = config.port3
-time.sleep(config.delay)
-
-pp4 = DigitalInOut(board.GP13)
-pp4.direction = Direction.OUTPUT
-pp4.value = config.port4
-time.sleep(config.delay)
-
-pp5 = DigitalInOut(board.GP1)
-pp5.direction = Direction.OUTPUT
-pp5.value = config.port5
-time.sleep(config.delay)
-
-pp6 = DigitalInOut(board.GP3)
-pp6.direction = Direction.OUTPUT
-pp6.value = config.port6
-time.sleep(config.delay)
-
-pp7 = DigitalInOut(board.GP2)
-pp7.direction = Direction.OUTPUT
-pp7.value = config.port7
-time.sleep(config.delay)
-
-ports = {
-    "1": pp1,
-    "2": pp2,
-    "3": pp3,
-    "4": pp4,
-    "5": pp5,
-    "6": pp6,
-    "7": pp7,
-}
+VERSION = "RF.Guru_7P_Switch_LoRa 0.1"
 
 print(red(config.name + " -=- " + VERSION))
-
-# Lora Stuff
-RADIO_FREQ_MHZ = 868.000
-CS = DigitalInOut(board.GP21)
-RESET = DigitalInOut(board.GP20)
-spi = busio.SPI(board.GP10, MOSI=board.GP11, MISO=board.GP8)
-rfm9x = adafruit_rfm9x.RFM9x(
-    spi, CS, RESET, RADIO_FREQ_MHZ, baudrate=1000000, agc=False, crc=True
-)
-rfm9x.tx_power = 5
 
 # configure watchdog
 w.timeout = 5
 w.mode = WatchDogMode.RESET
 w.feed()
 
-while True:
-    msg = yellow("Waiting for LoRa packet ...")
-    print(f"{msg}\r", end="")
-    packet = rfm9x.receive(w, with_header=True, timeout=10)
 
-    if packet is not None:
-        # print(packet)
-        if packet[:3] == (b"<\xaa\x01"):
-            rawdata = bytes(packet[3:]).decode("utf-8")
-            try:
-                name, setport, intstate = rawdata.split("/", 3)
-            except:
-                name = "unknown"
-                setport = "0"
-                
-            print(
-                purple(
-                    "PORT REQ: Name: "
-                    + name
-                    + " Port: "
-                    + setport
-                    + " State: "
-                    + intstate
-                )
+
+async def initStuff(loop):
+    global inputs, ports
+
+    pp1 = DigitalInOut(board.GP23)
+    pp1.direction = Direction.OUTPUT
+
+    pp2 = DigitalInOut(board.GP22)
+    pp2.direction = Direction.OUTPUT
+
+    pp3 = DigitalInOut(board.GP14)
+    pp3.direction = Direction.OUTPUT
+
+    pp4 = DigitalInOut(board.GP13)
+    pp4.direction = Direction.OUTPUT
+
+    pp5 = DigitalInOut(board.GP1)
+    pp5.direction = Direction.OUTPUT
+
+    pp6 = DigitalInOut(board.GP3)
+    pp6.direction = Direction.OUTPUT
+
+    pp7 = DigitalInOut(board.GP2)
+    pp7.direction = Direction.OUTPUT
+
+    ports = {
+        "1": pp1,
+        "2": pp2,
+        "3": pp3,
+        "4": pp4,
+        "5": pp5,
+        "6": pp6,
+        "7": pp7,
+    }
+
+    bt1 = DigitalInOut(board.GP0)
+    bt1.direction = Direction.INPUT
+    bt1.pull = Pull.UP
+
+    bt2 = DigitalInOut(board.GP29)
+    bt2.direction = Direction.INPUT
+    bt2.pull = Pull.UP
+
+    bt3 = DigitalInOut(board.GP28)
+    bt3.direction = Direction.INPUT
+    bt3.pull = Pull.UP
+
+    bt4 = DigitalInOut(board.GP27)
+    bt4.direction = Direction.INPUT
+    bt4.pull = Pull.UP
+
+    bt5 = DigitalInOut(board.GP26)
+    bt5.direction = Direction.INPUT
+    bt5.pull = Pull.UP
+
+    bt6 = DigitalInOut(board.GP5)
+    bt6.direction = Direction.INPUT
+    bt6.pull = Pull.UP
+
+    bt7 = DigitalInOut(board.GP6)
+    bt7.direction = Direction.INPUT
+    bt7.pull = Pull.UP
+
+    inputs = {
+        "1": bt1,
+        "2": bt2,
+        "3": bt3,
+        "4": bt4,
+        "5": bt5,
+        "6": bt6,
+        "7": bt7,
+    }
+
+    
+    for port, data in config.ports.items():
+        loop.create_task(initPort(port,data))
+   
+async def initPort(port,data):
+    global config, ports
+    await asyncio.sleep(data["delay"])
+    ports[str(int(port))].value = data["state"]
+
+async def loraListener():
+    global inputs, ports, config, w
+    await asyncio.sleep(1)
+    w.feed()
+    # Lora Stuff
+    RADIO_FREQ_MHZ = 868.000
+    CS = DigitalInOut(board.GP21)
+    RESET = DigitalInOut(board.GP20)
+    spi = busio.SPI(board.GP10, MOSI=board.GP11, MISO=board.GP8)
+    rfm9x = adafruit_rfm9x.RFM9x(
+        spi, CS, RESET, RADIO_FREQ_MHZ, baudrate=1000000, agc=False, crc=True
+    )
+    rfm9x.tx_power = 5
+
+    while True:
+        msg = yellow("Waiting for LoRa packet ...")
+        print(f"{msg}\r", end="")
+        packet = await rfm9x.areceive(w, with_header=True, timeout=10)
+
+        if packet is not None:
+            # print(packet)
+            if packet[:3] == (b"<\xaa\x01"):
+                rawdata = bytes(packet[3:]).decode("utf-8")
+                try:
+                    name, setport, intstate = rawdata.split("/", 3)
+                except:
+                    name = "unknown"
+                    setport = "0"
+                    intstate = "0"
+                    
+                print(
+                    purple(
+                        "PORT REQ: Name: "
+                        + name
+                        + " Port: "
+                        + setport
+                        + " State: "
+                        + intstate
+                    )
             )
 
             if name == config.name:
@@ -133,4 +177,29 @@ while True:
                     yellow("Received another switch port req packet: " + str(rawdata))
                 )
         else:
-            print(yellow("Received an unknown packet: " + str(packet)))
+            if packet is not None:
+                print(yellow("Received an unknown packet: " + str(packet)))
+    
+async def buttonListener():
+    global inputs, ports, w
+    await asyncio.sleep(1)
+    w.feed()
+    while True:
+        for key, ip in inputs.items():
+            if ip.value is False:
+                if ports[str(int(key))].value == False:
+                    ports[str(int(key))].value = True
+                elif ports[str(int(key))].value == True:
+                    ports[str(int(key))].value = False
+                await asyncio.sleep(0.5)
+        await asyncio.sleep(0)
+
+
+async def main():
+    loop = asyncio.get_event_loop()
+    init = asyncio.create_task(initStuff(loop))
+    lora = asyncio.create_task(loraListener())
+    buttons = asyncio.create_task(buttonListener())
+    await asyncio.gather(lora, buttons, init)
+
+asyncio.run(main())
