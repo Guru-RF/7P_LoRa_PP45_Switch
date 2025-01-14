@@ -1,3 +1,0 @@
-Adafruit CircuitPython 9.2.1 on 2024-11-20; RF.Guru RP2040 with rp2040
-Board ID:rfguru_rp2040
-UID:1120022408010012
