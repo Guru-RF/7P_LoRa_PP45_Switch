@@ -1,5 +1,7 @@
 import asyncio
 import time
+import os
+import aesio
 
 import adafruit_rfm9x
 import board
@@ -9,6 +11,43 @@ from microcontroller import watchdog as w
 from watchdog import WatchDogMode
 
 import config
+
+# basic encryption
+import aesio
+import os
+
+# Padding functions
+def pad_message(message, block_size=16):
+    padding = block_size - (len(message) % block_size)
+    return message + bytes([padding] * padding)
+
+# Encrypt with IV
+def encrypt_message(message, key):
+    iv = os.urandom(16)
+    padded_message = pad_message(message)
+    aes = aesio.AES(key, aesio.MODE_CBC, iv)
+    encrypted_message = bytearray(len(padded_message))
+    aes.encrypt_into(padded_message, encrypted_message)
+
+    return iv + encrypted_message
+
+# Unpadding function
+def unpad_message(message):
+    padding = message[-1]
+    return message[:-padding]
+
+# Decrypt function
+def decrypt_message(payload, key):
+    iv = payload[:16]
+    # Ensure IV length is correct
+    if len(iv) != 16:
+        raise ValueError(f"Invalid IV length: {len(iv)} (expected 16 bytes)")
+    encrypted_message = payload[16:]
+    aes = aesio.AES(key, aesio.MODE_CBC, iv)
+    decrypted_message = bytearray(len(encrypted_message))
+    aes.decrypt_into(encrypted_message, decrypted_message)
+
+    return unpad_message(decrypted_message)
 
 
 def purple(data):
@@ -33,8 +72,6 @@ print(red(config.name + " -=- " + VERSION))
 w.timeout = 5
 w.mode = WatchDogMode.RESET
 w.feed()
-
-
 
 async def initStuff(loop):
     global inputs, ports
@@ -139,8 +176,9 @@ async def loraListener():
         if packet is not None:
             # print(packet)
             if packet[:3] == (b"<\xaa\x01"):
-                rawdata = bytes(packet[3:]).decode("utf-8")
                 try:
+                    decrypted_message = decrypt_message(bytes(packet[3:]), config.key)
+                    rawdata = decrypted_message.decode("utf-8")
                     name, setport, intstate = rawdata.split("/", 3)
                 except:
                     name = "unknown"
